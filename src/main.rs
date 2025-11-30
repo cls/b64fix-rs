@@ -35,35 +35,28 @@ impl Base64Queue {
     }
 
     fn pop(&mut self) -> Option<u8> {
-        let (value, state) = match self.state {
-            State::State0 => {
+        let (state, value) = match self.state {
+            State::State0 => (State::State1, {
                 let byte0 = self.data.front()?;
-                let value = BASE64[(byte0 >> 2) as usize];
-                (value, State::State1)
-            }
-            State::State1 => {
+                Some(byte0 >> 2)
+            }),
+            State::State1 => (State::State2, {
                 let byte0 = self.data.pop_front().expect("State should be unreachable");
                 let byte1 = self.data.front().unwrap_or(&0);
-                let value = BASE64[(((byte0 << 4) & 0x3f) | (byte1 >> 4)) as usize];
-                (value, State::State2)
-            }
-            State::State2 => {
-                let value = self.data.pop_front().map_or(b'=', |byte1| {
+                Some(((byte0 << 4) & 0x3f) | (byte1 >> 4))
+            }),
+            State::State2 => (State::State3, {
+                self.data.pop_front().map(|byte1| {
                     let byte2 = self.data.front().unwrap_or(&0);
-                    BASE64[(((byte1 << 2) & 0x3f) | (byte2 >> 6)) as usize]
-                });
-                (value, State::State3)
-            }
-            State::State3 => {
-                let value = self
-                    .data
-                    .pop_front()
-                    .map_or(b'=', |byte2| BASE64[(byte2 & 0x3f) as usize]);
-                (value, State::State0)
-            }
+                    ((byte1 << 2) & 0x3f) | (byte2 >> 6)
+                })
+            }),
+            State::State3 => (State::State0, {
+                self.data.pop_front().map(|byte2| byte2 & 0x3f)
+            }),
         };
         self.state = state;
-        Some(value)
+        Some(value.map_or(b'=', |idx| BASE64[idx as usize]))
     }
 }
 
